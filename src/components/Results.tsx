@@ -14,7 +14,7 @@ import { formatBackupDuration, goalLabel } from '../lib/defaults'
 import { renderHouseViews } from '../lib/houseImage'
 import { buildReportHtml, openProfessionalReport } from '../lib/report'
 import { downloadStudyFile } from '../lib/storage'
-import { dayToChartPoints, formatDayClock, MONTH_NAMES } from '../lib/solar'
+import { dayToChartPoints, formatDayClock, MONTH_NAMES, slotToKw } from '../lib/solar'
 import type { ClimateSummary, DaySim, GoalMode, StudyInput, StudyResult } from '../types'
 
 interface Props {
@@ -45,10 +45,10 @@ function monthName(month: number | undefined): string {
 function chartRows(day: DaySim[]) {
   return dayToChartPoints(day).map((d) => ({
     h: formatDayClock(d.hour),
-    Consumo: Number(d.loadKwh.toFixed(3)),
-    Solar: Number(d.pvKwh.toFixed(3)),
-    Rede: Number(d.gridImportKwh.toFixed(3)),
-    Exportação: Number(d.exportKwh.toFixed(3)),
+    Consumo: Number(slotToKw(d.loadKwh).toFixed(3)),
+    Solar: Number(slotToKw(d.pvKwh).toFixed(3)),
+    Rede: Number(slotToKw(d.gridImportKwh).toFixed(3)),
+    Exportação: Number(slotToKw(d.exportKwh).toFixed(3)),
     Bateria: Number(d.socKwh.toFixed(2)),
   }))
 }
@@ -100,7 +100,7 @@ function ChartTooltip({
       <ul>
         {payload.map((p) => {
           const name = p.name ?? ''
-          const unit = name === 'Bateria' ? 'kWh' : 'kWh/30 min'
+          const unit = name === 'Bateria' ? 'kWh' : 'kW'
           const digits = name === 'Bateria' ? 2 : 3
           return (
             <li key={name} style={{ color: p.color }}>
@@ -117,7 +117,7 @@ function DayProfileChart({ day }: { day: DaySim[] }) {
   return (
     <div>
       <div className="chart-axis-units" aria-hidden="true">
-        <span>kWh / 30 min</span>
+        <span>kW</span>
         <span>Bateria (kWh)</span>
       </div>
       <div className="h-96">
@@ -292,8 +292,8 @@ export function Results({ input, result }: Props) {
         <h3 className="section-title mb-1">{dayChartTitle(input.goal.mode, input.goal.useClimate)}</h3>
         <p className="hint mb-4">
           {input.goal.useClimate
-            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Todas as séries a 30 min. Escala à esquerda: consumo, solar e rede (kWh por intervalo). Escala à direita: estado de carga da bateria (kWh).'
-            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Todas as séries a 30 min. Escala à esquerda: consumo, solar e rede (kWh por intervalo). Escala à direita: estado de carga da bateria (kWh).'}
+            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Pontos a cada 30 min; consumo, solar e rede em kW (kWh por hora). Escala à direita: energia na bateria (kWh).'
+            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Pontos a cada 30 min; consumo, solar e rede em kW (kWh por hora). Escala à direita: energia na bateria (kWh).'}
         </p>
         <DayProfileChart day={result.day} />
         {dayBest && dayBest.length > 0 && dayWorst && dayWorst.length > 0 && (

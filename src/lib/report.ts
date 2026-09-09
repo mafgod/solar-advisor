@@ -1,5 +1,5 @@
 import { formatBackupDuration, goalLabel } from './defaults'
-import { dayToChartPoints, formatDayClock, MONTH_NAMES } from './solar'
+import { dayToChartPoints, formatDayClock, MONTH_NAMES, slotToKw } from './solar'
 import { downloadBlob } from './storage'
 import type { StudyInput, StudyResult } from '../types'
 
@@ -35,14 +35,18 @@ function fmtChartTick(value: number): string {
 }
 
 function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh: number }[]): string {
-  const day = dayToChartPoints(dayIn)
+  const day = dayToChartPoints(dayIn).map((d) => ({
+    ...d,
+    loadKw: slotToKw(d.loadKwh),
+    pvKw: slotToKw(d.pvKwh),
+  }))
   const w = 760
   const h = 232
   const pad = { l: 56, r: 56, t: 16, b: 28 }
   const innerW = w - pad.l - pad.r
   const innerH = h - pad.t - pad.b
   const maxFlow = niceCeil(
-    Math.max(0, ...day.map((d) => Math.max(d.loadKwh, d.pvKwh))),
+    Math.max(0, ...day.map((d) => Math.max(d.loadKw, d.pvKw))),
     0.1,
   )
   const maxSoc = niceCeil(Math.max(0, ...day.map((d) => d.socKwh)), 1)
@@ -62,14 +66,14 @@ function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh:
   }).join('')
   const load = day
     .map((d, i) => {
-      const bh = (d.loadKwh / maxFlow) * innerH
-      return `<rect x="${pad.l + i * bw + 1}" y="${yFlow(d.loadKwh)}" width="${bw * 0.38}" height="${bh}" fill="#5c6778" rx="1"/>`
+      const bh = (d.loadKw / maxFlow) * innerH
+      return `<rect x="${pad.l + i * bw + 1}" y="${yFlow(d.loadKw)}" width="${bw * 0.38}" height="${bh}" fill="#5c6778" rx="1"/>`
     })
     .join('')
   const solar = day
     .map((d, i) => {
-      const bh = (d.pvKwh / maxFlow) * innerH
-      return `<rect x="${pad.l + i * bw + bw * 0.42}" y="${yFlow(d.pvKwh)}" width="${bw * 0.38}" height="${bh}" fill="#c4a574" rx="1"/>`
+      const bh = (d.pvKw / maxFlow) * innerH
+      return `<rect x="${pad.l + i * bw + bw * 0.42}" y="${yFlow(d.pvKw)}" width="${bw * 0.38}" height="${bh}" fill="#c4a574" rx="1"/>`
     })
     .join('')
   const bat = day
@@ -82,7 +86,7 @@ function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh:
     })
     .join('')
   const axisTitles = [
-    `<text transform="translate(12 ${pad.t + innerH / 2}) rotate(-90)" text-anchor="middle" fill="#5c6778" font-size="9">kWh / 30 min</text>`,
+    `<text transform="translate(12 ${pad.t + innerH / 2}) rotate(-90)" text-anchor="middle" fill="#5c6778" font-size="9">kW</text>`,
     `<text transform="translate(${w - 12} ${pad.t + innerH / 2}) rotate(90)" text-anchor="middle" fill="#1a6b6b" font-size="9">Bateria (kWh)</text>`,
   ].join('')
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" xmlns="http://www.w3.org/2000/svg">${grid}${load}${solar}<path d="${bat}" fill="none" stroke="#1a6b6b" stroke-width="1.8"/>${labels}${axisTitles}</svg>`
@@ -224,8 +228,8 @@ export function buildReportHtml(
     ${chartSvg(result.day)}
     <p class="muted">${
       input.goal.useClimate
-        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Intervalo de 30 min. Escala à esquerda: kWh por intervalo. Escala à direita: kWh na bateria.'
-        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Intervalo de 30 min. Escala à esquerda: kWh por intervalo. Escala à direita: kWh na bateria.'
+        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Pontos a cada 30 min; consumo e solar em kW. Escala à direita: kWh na bateria.'
+        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Pontos a cada 30 min; consumo e solar em kW. Escala à direita: kWh na bateria.'
     }</p>
     ${
       result.dayBest?.length && result.dayWorst?.length

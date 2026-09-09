@@ -228,6 +228,11 @@ function expandDayToHalfHours<T extends DayChartPoint>(day: T[]): T[] {
   return out
 }
 
+/** Energia do intervalo (kWh) → potência média (kW = kWh/h). */
+export function slotToKw(kwh: number, stepHours = STEP_HOURS): number {
+  return stepHours > 0 ? kwh / stepHours : 0
+}
+
 /** 48 pontos a 30 min: consumo, solar, rede e SOC no mesmo passo da simulação. */
 export function dayToChartPoints<T extends DayChartPoint>(day: T[]): T[] {
   return expandDayToHalfHours(day)
