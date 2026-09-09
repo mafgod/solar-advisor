@@ -27,6 +27,7 @@ import {
   WINTER_MONTHS,
 } from './solar'
 import { effectiveAzimuth } from './geo'
+import { clampEvChargePower } from './ev'
 
 const PANEL_W = 450
 const PANEL_M2 = 2.3
@@ -84,7 +85,7 @@ function evHourly(input: StudyInput): number[] {
   if (!input.ev.enabled || daily <= 0 || hours.length === 0) return out
   let remaining = daily
   for (const h of hours) {
-    const cap = input.ev.chargePowerKw
+    const cap = clampEvChargePower(input.ev.chargePowerKw, input.consumption.phase)
     const add = Math.min(cap, remaining)
     out[h] += add
     remaining -= add
@@ -100,13 +101,8 @@ function combineLoad(base: number[], ev: number[]): number[] {
   return base.map((v, i) => v + ev[i])
 }
 
-function houseMeanAndPeakKw(input: StudyInput): { meanKw: number; peakKw: number } {
-  const hours = typicalLoad(input, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
-  const daily = hours.reduce((a, b) => a + b, 0)
-  return {
-    meanKw: daily / 24,
-    peakKw: Math.max(0.25, ...hours),
-  }
+function standbyKw(input: StudyInput): number {
+  return Math.max(0.04, input.consumption.standbyW / 1000)
 }
 
 function typicalLoad(input: StudyInput, months: number[]): number[] {
@@ -275,15 +271,20 @@ function sizePv(opts: {
 function backupPvKwp(opts: {
   pvgis: PvgisData
   backupHours: number
-  houseKw: number
+  standbyKw: number
   maxKwp: number
   useClimate: boolean
 }): number {
   const winterEd = opts.useClimate
     ? winterDesignYieldPerKwp(opts.pvgis)
     : Math.max(1.5, averageEd(opts.pvgis, WINTER_MONTHS))
-  const recover = (opts.houseKw * opts.backupHours) / Math.max(1.2, winterEd * (opts.useClimate ? 0.75 : 0.7))
+  const dailyHours = Math.min(24, opts.backupHours)
+  const recover = (opts.standbyKw * dailyHours) / Math.max(1.2, winterEd * (opts.useClimate ? 0.75 : 0.7))
   return clamp(Math.max(recover, 0.9), 0.45, opts.maxKwp)
+}
+
+function backupBatteryKwh(backupHours: number, loadKw: number): number {
+  return (loadKw * backupHours) / (DOD * 0.94)
 }
 
 function sizeBattery(opts: {
@@ -314,10 +315,6 @@ function sizeBattery(opts: {
     default:
       return Math.max(5, (night + extra * 0.7) / (DOD * cold))
   }
-}
-
-function backupBatteryKwh(backupHours: number, houseKw: number): number {
-  return (houseKw * backupHours) / (DOD * 0.94)
 }
 
 function phaseFor(input: StudyInput): PhaseType {
@@ -382,14 +379,14 @@ export function sizeSystem(input: StudyInput, pvgis: PvgisData): StudyResult {
     coverage: input.goal.annualCoverage,
     useClimate,
   })
-  const house = houseMeanAndPeakKw(input)
+  const islandKw = standbyKw(input)
   if (input.goal.antiBlackout) {
     pvKwp = Math.max(
       pvKwp,
       backupPvKwp({
         pvgis,
         backupHours: input.goal.backupHours,
-        houseKw: house.meanKw,
+        standbyKw: islandKw,
         maxKwp: cap,
         useClimate,
       }),
@@ -418,12 +415,12 @@ export function sizeSystem(input: StudyInput, pvgis: PvgisData): StudyResult {
   if (input.goal.antiBlackout) {
     batteryRaw = Math.max(
       batteryRaw,
-      backupBatteryKwh(input.goal.backupHours, house.meanKw),
+      backupBatteryKwh(input.goal.backupHours, islandKw),
     )
   }
   const batteryKwh = pickBattery(batteryRaw)
 
-  const peakLoad = Math.max(...load, input.goal.antiBlackout ? house.peakKw : 0)
+  const peakLoad = Math.max(...load)
   const dcAc = pvKwp / 1.15
   const inverterNeed = Math.max(dcAc, peakLoad)
   const inverterPhase = phaseFor(input)
@@ -504,7 +501,7 @@ export function sizeSystem(input: StudyInput, pvgis: PvgisData): StudyResult {
 
   const atsRequired = input.goal.antiBlackout
   const backupHoursEffective =
-    house.meanKw > 0 ? (batteryKwh * DOD * 0.94) / house.meanKw : 0
+    islandKw > 0 ? (batteryKwh * DOD * 0.94) / islandKw : 0
 
   const result: StudyResult = {
     pvKwp,
@@ -648,17 +645,25 @@ function buildNotes(
   }
 
   if (input.goal.antiBlackout) {
-    const house = houseMeanAndPeakKw(input)
+    const hours = input.goal.backupHours
+    const days = hours / 24
+    const duration =
+      hours < 24
+        ? `${hours} h`
+        : `${days === 1 ? '1 dia' : `${String(Math.round(days * 10) / 10).replace('.', ',')} dias`} (${hours} h)`
     notes.push(
-      `Anti-apagão da casa toda: com rede o inversor fica em grid-tie em paralelo com o quadro geral; em falha o ATS comuta toda a habitação para a saída EPS/backup. Bateria e inversor pensados para ~${house.meanKw.toFixed(2)} kW médios e pico ~${house.peakKw.toFixed(1)} kW (consumo declarado) durante ${input.goal.backupHours} h.`,
+      `Anti-apagão: com rede o inversor fica em grid-tie em paralelo com o quadro geral; em falha o ATS comuta o quadro geral para a saída EPS/backup. A autonomia está calculada só para o standby (~${input.consumption.standbyW} W) durante ${duration}.`,
+    )
+    notes.push(
+      input.ev.enabled
+        ? 'O wallbox fica no quadro geral. Em falha de rede não carregue o VE nem ligue o resto da casa: a bateria está dimensionada para o standby e esgota-se depressa.'
+        : 'Em falha de rede não carregue o VE nem ligue o resto da casa: a autonomia está dimensionada só para o standby.',
     )
   }
 
-  if (input.ev.enabled) {
+  if (input.ev.enabled && !input.goal.antiBlackout) {
     notes.push(
-      input.goal.antiBlackout
-        ? 'O wallbox fica no quadro geral (a casa toda vai ao backup). Em falha de rede não carregue o VE: a autonomia cai depressa.'
-        : 'Se o VE carregar de dia, o inversor limita a potência solar que o wallbox consegue aproveitar.',
+      'Se o VE carregar de dia, o inversor limita a potência solar que o wallbox consegue aproveitar.',
     )
   }
 

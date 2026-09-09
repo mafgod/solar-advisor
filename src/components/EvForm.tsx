@@ -1,11 +1,14 @@
-import type { EvInput } from '../types'
+import { useEffect } from 'react'
+import { clampEvChargePower, evChargeOptions } from '../lib/ev'
+import type { EvInput, PhaseType } from '../types'
 
 interface Props {
   value: EvInput
+  phase: PhaseType
   onChange: (next: EvInput) => void
 }
 
-export function EvForm({ value, onChange }: Props) {
+export function EvForm({ value, phase, onChange }: Props) {
   const hoursOn = value.chargeHours.filter(Boolean).length
   const energy =
     value.dailyKwhOverride && value.dailyKwhOverride > 0
@@ -21,6 +24,15 @@ export function EvForm({ value, onChange }: Props) {
     chargeHours[i] = !chargeHours[i]
     patch({ chargeHours })
   }
+
+  const chargeOptions = evChargeOptions(phase)
+  const chargePowerKw = clampEvChargePower(value.chargePowerKw, phase)
+
+  useEffect(() => {
+    if (chargePowerKw !== value.chargePowerKw) {
+      patch({ chargePowerKw })
+    }
+  }, [chargePowerKw, value.chargePowerKw])
 
   return (
     <div className="space-y-6">
@@ -76,15 +88,20 @@ export function EvForm({ value, onChange }: Props) {
             Potência de carregamento (kW)
             <select
               className="field"
-              value={value.chargePowerKw}
+              value={chargePowerKw}
               onChange={(e) => patch({ chargePowerKw: Number(e.target.value) })}
             >
-              <option value={2.3}>Schuko 2,3 kW</option>
-              <option value={3.7}>Wallbox 3,7 kW</option>
-              <option value={7.4}>Wallbox 7,4 kW</option>
-              <option value={11}>Trifásico 11 kW</option>
-              <option value={22}>Trifásico 22 kW</option>
+              {chargeOptions.map((o) => (
+                <option key={o.kw} value={o.kw}>
+                  {o.label}
+                </option>
+              ))}
             </select>
+            <span className="meta">
+              {phase === 'three'
+                ? 'Ramal trifásico: pode escolher wallbox 11 ou 22 kW.'
+                : 'Ramal monofásico: só Schuko ou wallbox 230 V (até 7,4 kW).'}
+            </span>
           </label>
         </div>
 

@@ -1,5 +1,5 @@
-import { goalLabel } from './defaults'
-import { dayToHalfHours, formatDayClock, MONTH_NAMES } from './solar'
+import { formatBackupDuration, goalLabel } from './defaults'
+import { dayToHours, formatDayClock, MONTH_NAMES } from './solar'
 import { downloadBlob } from './storage'
 import type { StudyInput, StudyResult } from '../types'
 
@@ -20,33 +20,60 @@ function fmtDate(iso?: string): string {
   })
 }
 
+function niceCeil(value: number, floor: number): number {
+  const v = Math.max(floor, value)
+  if (v <= 0) return floor
+  const pow = 10 ** Math.floor(Math.log10(v))
+  const n = v / pow
+  const nice = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10
+  return nice * pow
+}
+
+function fmtChartTick(value: number): string {
+  const digits = Math.abs(value) >= 10 ? 0 : Math.abs(value) >= 1 ? 1 : 2
+  return value.toFixed(digits).replace('.', ',')
+}
+
 function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh: number }[]): string {
-  const day = dayToHalfHours(dayIn)
+  const day = dayToHours(dayIn)
   const w = 760
-  const h = 220
-  const pad = { l: 36, r: 12, t: 16, b: 28 }
+  const h = 232
+  const pad = { l: 56, r: 56, t: 16, b: 28 }
   const innerW = w - pad.l - pad.r
   const innerH = h - pad.t - pad.b
-  const max = Math.max(
-    0.2,
-    ...day.map((d) => Math.max(d.loadKwh, d.pvKwh, d.socKwh)),
+  const maxFlow = niceCeil(
+    Math.max(0, ...day.map((d) => Math.max(d.loadKwh, d.pvKwh))),
+    0.1,
   )
-  const bw = innerW / day.length
-  const y = (v: number) => pad.t + innerH - (v / max) * innerH
+  const maxSoc = niceCeil(Math.max(0, ...day.map((d) => d.socKwh)), 1)
+  const bw = innerW / Math.max(1, day.length)
+  const yFlow = (v: number) => pad.t + innerH - (v / maxFlow) * innerH
+  const ySoc = (v: number) => pad.t + innerH - (v / maxSoc) * innerH
+  const tickCount = 4
+  const grid = Array.from({ length: tickCount + 1 }, (_, i) => {
+    const flow = (maxFlow * i) / tickCount
+    const soc = (maxSoc * i) / tickCount
+    const y = yFlow(flow)
+    return [
+      `<line x1="${pad.l}" x2="${w - pad.r}" y1="${y}" y2="${y}" stroke="#e2e7ee"/>`,
+      `<text x="${pad.l - 6}" y="${y + 3}" text-anchor="end" fill="#5c6778" font-size="9">${fmtChartTick(flow)}</text>`,
+      `<text x="${w - pad.r + 6}" y="${ySoc(soc) + 3}" text-anchor="start" fill="#1a6b6b" font-size="9">${fmtChartTick(soc)}</text>`,
+    ].join('')
+  }).join('')
   const load = day
     .map((d, i) => {
-      const bh = (d.loadKwh / max) * innerH
-      return `<rect x="${pad.l + i * bw + 1}" y="${y(d.loadKwh)}" width="${bw * 0.38}" height="${bh}" fill="#5c6778" rx="1"/>`
+      const bh = (d.loadKwh / maxFlow) * innerH
+      return `<rect x="${pad.l + i * bw + 1}" y="${yFlow(d.loadKwh)}" width="${bw * 0.38}" height="${bh}" fill="#5c6778" rx="1"/>`
     })
     .join('')
   const solar = day
     .map((d, i) => {
-      const bh = (d.pvKwh / max) * innerH
-      return `<rect x="${pad.l + i * bw + bw * 0.42}" y="${y(d.pvKwh)}" width="${bw * 0.38}" height="${bh}" fill="#c4a574" rx="1"/>`
+      const bh = (d.pvKwh / maxFlow) * innerH
+      return `<rect x="${pad.l + i * bw + bw * 0.42}" y="${yFlow(d.pvKwh)}" width="${bw * 0.38}" height="${bh}" fill="#c4a574" rx="1"/>`
     })
     .join('')
   const bat = day
-    .map((d, i) => `${i === 0 ? 'M' : 'L'} ${pad.l + i * bw + bw / 2} ${y(d.socKwh)}`)
+    .map((d, i) => `${i === 0 ? 'M' : 'L'} ${pad.l + i * bw + bw / 2} ${ySoc(d.socKwh)}`)
     .join(' ')
   const labels = day
     .map((d, i) => {
@@ -54,7 +81,11 @@ function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh:
       return `<text x="${pad.l + i * bw + bw / 2}" y="${h - 8}" text-anchor="middle" fill="#7a8494" font-size="9">${formatDayClock(d.hour)}</text>`
     })
     .join('')
-  return `<svg viewBox="0 0 ${w} ${h}" width="100%" xmlns="http://www.w3.org/2000/svg">${load}${solar}<path d="${bat}" fill="none" stroke="#1a6b6b" stroke-width="1.8"/>${labels}</svg>`
+  const axisTitles = [
+    `<text transform="translate(12 ${pad.t + innerH / 2}) rotate(-90)" text-anchor="middle" fill="#5c6778" font-size="9">kWh / h</text>`,
+    `<text transform="translate(${w - 12} ${pad.t + innerH / 2}) rotate(90)" text-anchor="middle" fill="#1a6b6b" font-size="9">Bateria (kWh)</text>`,
+  ].join('')
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" xmlns="http://www.w3.org/2000/svg">${grid}${load}${solar}<path d="${bat}" fill="none" stroke="#1a6b6b" stroke-width="1.8"/>${labels}${axisTitles}</svg>`
 }
 
 export function buildReportHtml(
@@ -176,7 +207,7 @@ export function buildReportHtml(
       <div class="kpi"><span>Painéis</span><strong>${result.pvKwp.toFixed(2)} kWp</strong><em>${result.panelCount} × ${result.panelWatts} W</em></div>
       <div class="kpi"><span>Inversor híbrido</span><strong>${result.inverterKw} kW</strong><em>${result.inverterPhase === 'three' ? 'Trifásico' : 'Monofásico'}${input.consumption.inverterLimitKw != null ? ` · teto ${input.consumption.inverterLimitKw} kW` : ''}</em></div>
       <div class="kpi"><span>Bateria</span><strong>${result.batteryKwh} kWh</strong><em>${result.usableBatteryKwh.toFixed(1)} kWh úteis</em></div>
-      <div class="kpi"><span>Autonomia da casa</span><strong>${input.goal.antiBlackout ? `${result.backupHoursEffective.toFixed(1)} h` : '—'}</strong><em>${input.goal.antiBlackout ? (result.atsRequired ? 'ATS · quadro geral no backup' : 'On-grid') : 'Anti-apagão desligado'}</em></div>
+      <div class="kpi"><span>Autonomia da casa</span><strong>${input.goal.antiBlackout ? formatBackupDuration(result.backupHoursEffective) : '—'}</strong><em>${input.goal.antiBlackout ? (result.atsRequired ? 'ATS · só standby · não carregar o VE' : 'On-grid') : 'Anti-apagão desligado'}</em></div>
     </div>
     <div class="stats">
       <div class="stat"><span>Produção anual</span><strong>${result.annualPvKwh.toFixed(0)} kWh</strong></div>
@@ -193,8 +224,8 @@ export function buildReportHtml(
     ${chartSvg(result.day)}
     <p class="muted">${
       input.goal.useClimate
-        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Intervalo de 30 minutos (kWh por meia hora).'
-        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Intervalo de 30 minutos (kWh por meia hora).'
+        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Intervalo de 1 h. Escala à esquerda: kWh por hora. Escala à direita: kWh na bateria.'
+        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Intervalo de 1 h. Escala à esquerda: kWh por hora. Escala à direita: kWh na bateria.'
     }</p>
     ${
       result.dayBest?.length && result.dayWorst?.length

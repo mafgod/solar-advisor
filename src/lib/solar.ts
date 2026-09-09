@@ -174,28 +174,47 @@ type DayChartPoint = {
   batteryKwh?: number
 }
 
-function halfChartPoint<T extends DayChartPoint>(d: T, hour: number, soc: number): T {
+function mergeHourSlots<T extends DayChartPoint>(slots: T[], hour: number): T {
+  const last = slots[slots.length - 1] as T
+  const sum = (key: 'loadKwh' | 'pvKwh' | 'gridImportKwh' | 'exportKwh' | 'batteryKwh') =>
+    slots.reduce((a, s) => a + (typeof s[key] === 'number' ? (s[key] as number) : 0), 0)
   return {
-    ...d,
+    ...last,
     hour,
-    loadKwh: d.loadKwh / 2,
-    pvKwh: d.pvKwh / 2,
-    socKwh: soc,
-    ...(typeof d.gridImportKwh === 'number' ? { gridImportKwh: d.gridImportKwh / 2 } : {}),
-    ...(typeof d.exportKwh === 'number' ? { exportKwh: d.exportKwh / 2 } : {}),
-    ...(typeof d.batteryKwh === 'number' ? { batteryKwh: d.batteryKwh / 2 } : {}),
+    loadKwh: sum('loadKwh'),
+    pvKwh: sum('pvKwh'),
+    socKwh: last.socKwh,
+    ...(typeof last.gridImportKwh === 'number' ? { gridImportKwh: sum('gridImportKwh') } : {}),
+    ...(typeof last.exportKwh === 'number' ? { exportKwh: sum('exportKwh') } : {}),
+    ...(typeof last.batteryKwh === 'number' ? { batteryKwh: sum('batteryKwh') } : {}),
   }
 }
 
-/** Estudos antigos (24 pontos) passam a 48 intervalos de 30 min para os gráficos. */
-export function dayToHalfHours<T extends DayChartPoint>(day: T[]): T[] {
-  if (day.length !== 24) return day
+/** Agrega o dia simulado (30 min ou outro passo) em 24 barras de 1 h para os gráficos. */
+export function dayToHours<T extends DayChartPoint>(day: T[]): T[] {
+  if (!day.length) return day
+  if (day.length === 24) {
+    return day.map((d) => ({ ...d, hour: Math.floor(d.hour) }))
+  }
   const out: T[] = []
-  let prevSoc = day[0]?.socKwh ?? 0
+  const perHour = day.length / 24
+  if (Number.isInteger(perHour) && perHour >= 1) {
+    for (let h = 0; h < 24; h++) {
+      const slots = day.slice(h * perHour, (h + 1) * perHour)
+      if (slots.length) out.push(mergeHourSlots(slots, h))
+    }
+    return out
+  }
+  const groups = new Map<number, T[]>()
   for (const d of day) {
-    out.push(halfChartPoint(d, d.hour, (prevSoc + d.socKwh) / 2))
-    out.push(halfChartPoint(d, d.hour + 0.5, d.socKwh))
-    prevSoc = d.socKwh
+    const h = Math.floor((((d.hour % 24) + 24) % 24))
+    const list = groups.get(h) ?? []
+    list.push(d)
+    groups.set(h, list)
+  }
+  for (let h = 0; h < 24; h++) {
+    const slots = groups.get(h)
+    if (slots?.length) out.push(mergeHourSlots(slots, h))
   }
   return out
 }

@@ -1,5 +1,6 @@
 import type { LocationInput, Settings, StudyFile, StudyInput, StudyResult } from '../types'
 import { defaultLocation, defaultSettings, defaultStudy, normalizeGoal, normalizeInverterLimit } from './defaults'
+import { clampEvChargePower } from './ev'
 import { applyZones, roofPolygon } from './geo'
 
 const STUDY_KEY = 'casasolar.study'
@@ -49,19 +50,24 @@ export function studyFromSaved(
   saved: Partial<StudyInput> & { location?: LegacyLocation },
 ): StudyInput {
   const base = defaultStudy()
+  const consumption = {
+    ...base.consumption,
+    ...saved.consumption,
+    hourlyKwh: saved.consumption?.hourlyKwh ?? base.consumption.hourlyKwh,
+    monthlyDailyKwh: saved.consumption?.monthlyDailyKwh ?? base.consumption.monthlyDailyKwh,
+    inverterLimitKw: normalizeInverterLimit(saved.consumption?.inverterLimitKw),
+  }
   return {
     location: migrateLocation(saved.location),
-    consumption: {
-      ...base.consumption,
-      ...saved.consumption,
-      hourlyKwh: saved.consumption?.hourlyKwh ?? base.consumption.hourlyKwh,
-      monthlyDailyKwh: saved.consumption?.monthlyDailyKwh ?? base.consumption.monthlyDailyKwh,
-      inverterLimitKw: normalizeInverterLimit(saved.consumption?.inverterLimitKw),
-    },
+    consumption,
     ev: {
       ...base.ev,
       ...saved.ev,
       chargeHours: saved.ev?.chargeHours ?? base.ev.chargeHours,
+      chargePowerKw: clampEvChargePower(
+        typeof saved.ev?.chargePowerKw === 'number' ? saved.ev.chargePowerKw : base.ev.chargePowerKw,
+        consumption.phase,
+      ),
     },
     goal: normalizeGoal(saved.goal as Record<string, unknown> | undefined),
   }

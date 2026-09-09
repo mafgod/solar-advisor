@@ -131,20 +131,28 @@ export function ConsumptionForm({ value, onChange }: Props) {
             onChange={(e) => patch({ contractedPowerKva: Number(e.target.value) })}
           />
         </label>
-        <label className="label">
-          Fase
+        <div className="label">
+          <span className="label-text">
+            Fase
+            <span className="info-wrap">
+              <button type="button" className="info-mark" aria-describedby="fase-tip" aria-label="Nota sobre o tipo de fase">
+                *
+              </button>
+              <span id="fase-tip" role="tooltip" className="info-pop">
+                O inversor, o ATS e o wallbox seguem o ramal da casa: monofásico nunca gera uma proposta trifásica.
+              </span>
+            </span>
+          </span>
           <select
             className="field"
             value={value.phase}
             onChange={(e) => patch({ phase: e.target.value as ConsumptionInput['phase'] })}
+            aria-label="Fase"
           >
             <option value="single">Monofásico</option>
             <option value="three">Trifásico</option>
           </select>
-          <span className="meta">
-            O inversor e o ATS seguem o ramal da casa: monofásico nunca gera uma proposta trifásica.
-          </span>
-        </label>
+        </div>
         <label className="label md:col-span-3">
           Standby estimado (W contínuos)
           <input
@@ -156,7 +164,8 @@ export function ConsumptionForm({ value, onChange }: Props) {
             onChange={(e) => patch({ standbyW: Number(e.target.value) })}
           />
           <span className="meta">
-            Router, alarme, eletrodomésticos em espera. Usado no modo «apenas eliminar o standby».
+            Router, alarme, eletrodomésticos em espera. Usado no modo «apenas eliminar o standby» e na autonomia em
+            falha de rede.
           </span>
         </label>
       </div>

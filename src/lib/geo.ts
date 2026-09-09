@@ -146,6 +146,67 @@ export function centroid(corners: LatLon[]): LatLon {
   }
 }
 
+function slopeAxes(azimuthDeg: number): { vx: number; vy: number; ux: number; uy: number } {
+  const az = (azimuthDeg * Math.PI) / 180
+  return {
+    vx: Math.sin(az),
+    vy: Math.cos(az),
+    ux: Math.sin(az + Math.PI / 2),
+    uy: Math.cos(az + Math.PI / 2),
+  }
+}
+
+export function tiltPlanCompress(tiltDeg: number): number {
+  return Math.cos((Math.max(0, Math.min(80, tiltDeg)) * Math.PI) / 180)
+}
+
+/** Filas de módulos na planta: o espaçamento encolhe com a inclinação (vista de cima). */
+export function tiltHatchLines(
+  corners: LatLon[],
+  azimuthDeg: number,
+  tiltDeg: number,
+): LatLon[][] {
+  if (corners.length < 3) return []
+  const origin = centroid(corners)
+  const { vx, vy, ux, uy } = slopeAxes(azimuthDeg)
+  const pts = corners.map((c) => metersBetween(origin, c))
+  const sVals = pts.map((p) => p.east * vx + p.north * vy)
+  const rVals = pts.map((p) => p.east * ux + p.north * uy)
+  const sMin = Math.min(...sVals)
+  const sMax = Math.max(...sVals)
+  const rMin = Math.min(...rVals)
+  const rMax = Math.max(...rVals)
+  const spacing = Math.max(0.4, 1.15 * tiltPlanCompress(tiltDeg))
+  const pad = Math.min(0.35, (sMax - sMin) * 0.08)
+  const lines: LatLon[][] = []
+  for (let s = sMin + pad + spacing * 0.35; s <= sMax - pad; s += spacing) {
+    lines.push([
+      destination(origin.lat, origin.lon, vx * s + ux * rMin, vy * s + uy * rMin),
+      destination(origin.lat, origin.lon, vx * s + ux * rMax, vy * s + uy * rMax),
+    ])
+  }
+  return lines
+}
+
+/** Seta da cumeeira para o beiral, na direcção da água. */
+export function slopeArrow(
+  corners: LatLon[],
+  azimuthDeg: number,
+): { from: LatLon; to: LatLon } | null {
+  if (corners.length < 2) return null
+  const origin = centroid(corners)
+  const { vx, vy } = slopeAxes(azimuthDeg)
+  const pts = corners.map((c) => metersBetween(origin, c))
+  const sVals = pts.map((p) => p.east * vx + p.north * vy)
+  const sMin = Math.min(...sVals)
+  const sMax = Math.max(...sVals)
+  if (sMax - sMin < 1.2) return null
+  return {
+    from: destination(origin.lat, origin.lon, vx * sMin, vy * sMin),
+    to: destination(origin.lat, origin.lon, vx * sMax, vy * sMax),
+  }
+}
+
 export function edgeSizes(corners: LatLon[]): { widthM: number; lengthM: number } {
   if (corners.length < 4) return { widthM: 2, lengthM: 2 }
   return {
@@ -173,6 +234,79 @@ export function rotateZone(corners: LatLon[], azimuthDeg: number): LatLon[] {
 export function translateCorners(corners: LatLon[], from: LatLon, to: LatLon): LatLon[] {
   const { east, north } = metersBetween(from, to)
   return corners.map((c) => destination(c.lat, c.lon, east, north))
+}
+
+function ridgeSlopeAxes(azimuthDeg: number): {
+  ux: number
+  uy: number
+  vx: number
+  vy: number
+} {
+  const az = (normalizeDeg(azimuthDeg) * Math.PI) / 180
+  const ridge = az + Math.PI / 2
+  return {
+    ux: Math.sin(ridge),
+    uy: Math.cos(ridge),
+    vx: Math.sin(az),
+    vy: Math.cos(az),
+  }
+}
+
+/** Aumenta ou reduz o retângulo a partir do centro, mantendo o azimute. */
+export function scaleZone(corners: LatLon[], azimuthDeg: number, factor: number): LatLon[] {
+  const c = centroid(corners)
+  const { widthM, lengthM } = edgeSizes(corners)
+  const s = Math.max(0.12, factor)
+  return roofPolygon(
+    c.lat,
+    c.lon,
+    Math.max(1.8, widthM * s),
+    Math.max(1.8, lengthM * s),
+    normalizeDeg(azimuthDeg),
+  )
+}
+
+/**
+ * Arrasta um canto: o lado oposto fica fixo e o retângulo mantém o azimute da água.
+ */
+export function resizeZoneFromCorner(
+  corners: LatLon[],
+  cornerIndex: number,
+  pointer: LatLon,
+  azimuthDeg: number,
+): LatLon[] {
+  if (corners.length < 4) return corners
+  const origin = corners[0]
+  const { ux, uy, vx, vy } = ridgeSlopeAxes(azimuthDeg)
+  const toUV = (p: LatLon) => {
+    const { east, north } = metersBetween(origin, p)
+    return { u: east * ux + north * uy, v: east * vx + north * vy }
+  }
+  const locals = corners.map(toUV)
+  const minU = Math.min(...locals.map((p) => p.u))
+  const maxU = Math.max(...locals.map((p) => p.u))
+  const minV = Math.min(...locals.map((p) => p.v))
+  const maxV = Math.max(...locals.map((p) => p.v))
+  const corner = locals[Math.max(0, Math.min(corners.length - 1, cornerIndex))]
+  const onMinU = Math.abs(corner.u - minU) <= Math.abs(corner.u - maxU)
+  const onMinV = Math.abs(corner.v - minV) <= Math.abs(corner.v - maxV)
+  const ptr = toUV(pointer)
+  let nMinU = onMinU ? ptr.u : minU
+  let nMaxU = onMinU ? maxU : ptr.u
+  let nMinV = onMinV ? ptr.v : minV
+  let nMaxV = onMinV ? maxV : ptr.v
+  const minSize = 1.8
+  if (nMaxU - nMinU < minSize) {
+    if (onMinU) nMinU = nMaxU - minSize
+    else nMaxU = nMinU + minSize
+  }
+  if (nMaxV - nMinV < minSize) {
+    if (onMinV) nMinV = nMaxV - minSize
+    else nMaxV = nMinV + minSize
+  }
+  const at = (u: number, v: number) =>
+    destination(origin.lat, origin.lon, ux * u + vx * v, uy * u + vy * v)
+  return [at(nMinU, nMinV), at(nMaxU, nMinV), at(nMaxU, nMaxV), at(nMinU, nMaxV)]
 }
 
 export function rotateHandlePoint(corners: LatLon[], azimuthDeg: number): LatLon {

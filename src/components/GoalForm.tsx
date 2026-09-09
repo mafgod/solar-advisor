@@ -1,4 +1,13 @@
+import { clampBackupHours, formatBackupDuration, MAX_BACKUP_HOURS } from '../lib/defaults'
 import type { GoalInput, GoalMode } from '../types'
+
+const BACKUP_PRESETS = [
+  { hours: 8, label: '8 h' },
+  { hours: 24, label: '1 dia' },
+  { hours: 48, label: '2 dias' },
+  { hours: 72, label: '3 dias' },
+  { hours: 168, label: '7 dias' },
+]
 
 const MODES: { id: GoalMode; title: string; text: string }[] = [
   {
@@ -85,10 +94,10 @@ export function GoalForm({ value, onChange }: Props) {
             className={value.antiBlackout ? 'mode on' : 'mode'}
             onClick={() => patch({ antiBlackout: !value.antiBlackout })}
           >
-            <span className="mode-title">Anti-apagão (casa toda)</span>
+            <span className="mode-title">Anti-apagão (standby)</span>
             <span>
               Com rede, o inversor fica em grid-tie em paralelo com a instalação. Sem rede, o ATS comuta o quadro geral
-              para a saída EPS/backup e a casa toda fica nessa saída.
+              para a saída EPS/backup. A autonomia calcula-se só com o standby (router, alarme, cargas em espera).
             </span>
           </button>
         </div>
@@ -98,20 +107,33 @@ export function GoalForm({ value, onChange }: Props) {
         <div className="card space-y-4">
           <h3 className="section-title">Autonomia da casa em falha de rede</h3>
           <p className="hint">
-            A potência média e o pico vêm do consumo declarado (passo anterior), sem o VE. Em ilhamento, evite o
-            wallbox.
+            Bateria e PV extra usam o standby declarado no passo Consumo, não o consumo médio da casa. A bateria cobre
+            a duração escolhida; o FV extra recupera cerca de um dia de standby. O ATS comuta o quadro geral: em
+            ilhamento não carregue o VE nem ligue o resto das cargas.
           </p>
+          <div className="flex flex-wrap gap-2">
+            {BACKUP_PRESETS.map((p) => (
+              <button
+                key={p.hours}
+                type="button"
+                className={value.backupHours === p.hours ? 'chip on' : 'chip'}
+                onClick={() => patch({ backupHours: p.hours })}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           <label className="label">
-            Horas de anti-apagão
+            Duração da falha de rede
             <input
               type="range"
               min={1}
-              max={24}
+              max={MAX_BACKUP_HOURS}
               value={value.backupHours}
-              onChange={(e) => patch({ backupHours: Number(e.target.value) })}
+              onChange={(e) => patch({ backupHours: clampBackupHours(Number(e.target.value)) })}
             />
             <span className="meta">
-              {value.backupHours} h com a casa toda no EPS (consumo médio declarado)
+              {formatBackupDuration(value.backupHours)} só com standby no EPS
             </span>
           </label>
         </div>

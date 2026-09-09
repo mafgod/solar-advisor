@@ -14,6 +14,7 @@ import {
   saveStudy,
 } from './lib/storage'
 import { effectiveAzimuth } from './lib/geo'
+import { clampEvChargePower } from './lib/ev'
 import type { StudyInput, StudyResult } from './types'
 
 const STEPS = [
@@ -21,7 +22,7 @@ const STEPS = [
     id: 0,
     title: 'Localização',
     heading: 'Onde está a habitação?',
-    lede: 'Encontre a casa no mapa. Depois toque em Desenhar e arraste sobre cada água do telhado para marcar as zonas dos painéis.',
+    lede: 'Encontre a casa no mapa. Depois toque em Desenhar e arraste sobre cada água do telhado. Use Tamanho para aumentar ou diminuir a zona.',
   },
   {
     id: 1,
@@ -71,6 +72,8 @@ export default function App() {
     document.body.scrollTop = 0
   }, [step])
 
+  const studyRun = useRef(0)
+
   const canNext = useMemo(() => {
     if (step === 0) return Number.isFinite(study.location.lat) && study.location.zones.length > 0
     if (step === 1) return study.consumption.hourlyKwh.reduce((a, b) => a + b, 0) > 0
@@ -79,7 +82,28 @@ export default function App() {
 
   const current = STEPS[step]
 
+  function studyBlocker(input: StudyInput): string | null {
+    if (!Number.isFinite(input.location.lat) || !Number.isFinite(input.location.lon)) {
+      return 'Indique a localização da habitação.'
+    }
+    if (!input.location.zones.length) {
+      return 'Marque pelo menos uma água do telhado no passo Localização.'
+    }
+    if (input.consumption.hourlyKwh.reduce((a, b) => a + b, 0) <= 0) {
+      return 'Indique o consumo da casa no passo Consumo.'
+    }
+    return null
+  }
+
   async function runStudy() {
+    const id = ++studyRun.current
+    setStep(4)
+    const blocked = studyBlocker(study)
+    if (blocked) {
+      setError(blocked)
+      setBusy(false)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -90,13 +114,22 @@ export default function App() {
         effectiveAzimuth(study.location),
         { useClimate: study.goal.useClimate },
       )
+      if (id !== studyRun.current) return
       setResult(sizeSystem(study, pvgis))
-      setStep(4)
     } catch (err) {
+      if (id !== studyRun.current) return
       setError(err instanceof Error ? err.message : 'Falha no cálculo')
     } finally {
-      setBusy(false)
+      if (id === studyRun.current) setBusy(false)
     }
+  }
+
+  function goToStep(next: number) {
+    if (next === 4 && step !== 4) {
+      void runStudy()
+      return
+    }
+    setStep(next)
   }
 
   async function importStudy(file: File) {
@@ -156,7 +189,7 @@ export default function App() {
               <button
                 type="button"
                 className={step === s.id ? 'step on' : step > s.id ? 'step done' : 'step'}
-                onClick={() => setStep(s.id)}
+                onClick={() => goToStep(s.id)}
               >
                 <span className="step-num">{s.id + 1}</span>
                 <span className="step-label">{s.title}</span>
@@ -181,24 +214,52 @@ export default function App() {
             </header>
           )}
 
-          {step === 0 && (
+          <div className={step === 0 ? undefined : 'hidden'} inert={step !== 0}>
             <MapPicker
               value={study.location}
+              active={step === 0}
               onChange={(location) => setStudy({ ...study, location })}
             />
-          )}
+          </div>
           {step === 1 && (
             <ConsumptionForm
               value={study.consumption}
-              onChange={(consumption) => setStudy({ ...study, consumption })}
+              onChange={(consumption) =>
+                setStudy({
+                  ...study,
+                  consumption,
+                  ev: {
+                    ...study.ev,
+                    chargePowerKw: clampEvChargePower(study.ev.chargePowerKw, consumption.phase),
+                  },
+                })
+              }
             />
           )}
-          {step === 2 && <EvForm value={study.ev} onChange={(ev) => setStudy({ ...study, ev })} />}
+          {step === 2 && (
+            <EvForm
+              value={study.ev}
+              phase={study.consumption.phase}
+              onChange={(ev) => setStudy({ ...study, ev })}
+            />
+          )}
           {step === 3 && <GoalForm value={study.goal} onChange={(goal) => setStudy({ ...study, goal })} />}
-          {step === 4 && result && <Results input={study} result={result} />}
-          {step === 4 && !result && (
+          {step === 4 && busy && (
             <div className="empty">
-              <p>Ainda não há estudo. Volte ao objetivo e calcule o pré-dimensionamento, ou abra um ficheiro guardado.</p>
+              <p>
+                {study.goal.useClimate
+                  ? 'A consultar o clima e o PVGIS com os valores actuais…'
+                  : 'A consultar o PVGIS com os valores actuais…'}
+              </p>
+            </div>
+          )}
+          {step === 4 && !busy && result && <Results input={study} result={result} />}
+          {step === 4 && !busy && !result && (
+            <div className="empty">
+              <p>
+                Ainda não há estudo. Marque o telhado, confirme o consumo (ou use o perfil pré-preenchido) e volte a
+                este passo — o cálculo usa os valores já escolhidos nos restantes passos.
+              </p>
               <button type="button" className="btn-ghost" onClick={() => importRef.current?.click()}>
                 Abrir estudo
               </button>

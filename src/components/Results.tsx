@@ -10,11 +10,11 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { goalLabel } from '../lib/defaults'
+import { formatBackupDuration, goalLabel } from '../lib/defaults'
 import { renderHouseViews } from '../lib/houseImage'
 import { buildReportHtml, openProfessionalReport } from '../lib/report'
 import { downloadStudyFile } from '../lib/storage'
-import { dayToHalfHours, formatDayClock, MONTH_NAMES } from '../lib/solar'
+import { dayToHours, formatDayClock, MONTH_NAMES } from '../lib/solar'
 import type { ClimateSummary, DaySim, GoalMode, StudyInput, StudyResult } from '../types'
 
 interface Props {
@@ -43,7 +43,7 @@ function monthName(month: number | undefined): string {
 }
 
 function chartRows(day: DaySim[]) {
-  return dayToHalfHours(day).map((d) => ({
+  return dayToHours(day).map((d) => ({
     h: formatDayClock(d.hour),
     Consumo: Number(d.loadKwh.toFixed(3)),
     Solar: Number(d.pvKwh.toFixed(3)),
@@ -51,6 +51,17 @@ function chartRows(day: DaySim[]) {
     Exportação: Number(d.exportKwh.toFixed(3)),
     Bateria: Number(d.socKwh.toFixed(2)),
   }))
+}
+
+function fmtPt(value: number, digits: number): string {
+  return value.toFixed(digits).replace('.', ',')
+}
+
+function fmtAxisTick(value: number): string {
+  const v = Number(value)
+  if (!Number.isFinite(v)) return ''
+  const digits = Math.abs(v) >= 10 ? 0 : Math.abs(v) >= 1 ? 1 : 2
+  return fmtPt(v, digits)
 }
 
 function HourTick({
@@ -73,22 +84,80 @@ function HourTick({
   )
 }
 
+function ChartTooltip({
+  active,
+  payload,
+  label,
+}: {
+  active?: boolean
+  payload?: { name?: string; value?: number; color?: string }[]
+  label?: string
+}) {
+  if (!active || !payload?.length) return null
+  return (
+    <div className="chart-tip">
+      <strong>{label}</strong>
+      <ul>
+        {payload.map((p) => {
+          const name = p.name ?? ''
+          const bat = name === 'Bateria'
+          return (
+            <li key={name} style={{ color: p.color }}>
+              {name}: {fmtPt(Number(p.value), bat ? 2 : 3)} {bat ? 'kWh' : 'kWh/h'}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function DayProfileChart({ day }: { day: DaySim[] }) {
   return (
-    <div className="h-80">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartRows(day)} barCategoryGap="18%" barGap={1}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e2e7ee" />
-          <XAxis dataKey="h" interval={0} tick={<HourTick />} height={36} />
-          <YAxis tick={{ fontSize: 12, fill: '#5c6778' }} />
-          <Tooltip />
-          <Legend />
-          <Bar dataKey="Consumo" fill="#5c6778" radius={[3, 3, 0, 0]} />
-          <Bar dataKey="Solar" fill="#c4a574" radius={[3, 3, 0, 0]} />
-          <Line type="monotone" dataKey="Bateria" stroke="#1a6b6b" strokeWidth={2} dot={false} />
-          <Line type="monotone" dataKey="Rede" stroke="#9b1c1c" strokeWidth={1.5} dot={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div>
+      <div className="chart-axis-units" aria-hidden="true">
+        <span>kWh / h</span>
+        <span>Bateria (kWh)</span>
+      </div>
+      <div className="h-96">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart
+            data={chartRows(day)}
+            barCategoryGap="18%"
+            barGap={1}
+            margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+          >
+            <CartesianGrid yAxisId="flow" strokeDasharray="3 3" stroke="#e2e7ee" />
+            <XAxis dataKey="h" interval={0} tick={<HourTick />} height={36} />
+            <YAxis
+              yAxisId="flow"
+              orientation="left"
+              width={48}
+              domain={[0, 'auto']}
+              tick={{ fontSize: 11, fill: '#5c6778' }}
+              tickFormatter={fmtAxisTick}
+              axisLine={{ stroke: '#5c6778' }}
+              tickLine={{ stroke: '#5c6778' }}
+            />
+            <YAxis
+              yAxisId="soc"
+              orientation="right"
+              width={48}
+              domain={[0, 'auto']}
+              tick={{ fontSize: 11, fill: '#1a6b6b' }}
+              tickFormatter={fmtAxisTick}
+              axisLine={{ stroke: '#1a6b6b' }}
+              tickLine={{ stroke: '#1a6b6b' }}
+            />
+            <Tooltip content={<ChartTooltip />} />
+            <Legend />
+            <Bar yAxisId="flow" dataKey="Consumo" fill="#5c6778" radius={[3, 3, 0, 0]} />
+            <Bar yAxisId="flow" dataKey="Solar" fill="#c4a574" radius={[3, 3, 0, 0]} />
+            <Line yAxisId="flow" type="monotone" dataKey="Rede" stroke="#9b1c1c" strokeWidth={1.5} dot={false} />
+            <Line yAxisId="soc" type="monotone" dataKey="Bateria" stroke="#1a6b6b" strokeWidth={2} dot={false} />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -156,11 +225,11 @@ export function Results({ input, result }: Props) {
         />
         <Kpi
           label="Autonomia da casa"
-          value={input.goal.antiBlackout ? `${result.backupHoursEffective.toFixed(1)} h` : '—'}
+          value={input.goal.antiBlackout ? formatBackupDuration(result.backupHoursEffective) : '—'}
           hint={
             input.goal.antiBlackout
               ? result.atsRequired
-                ? 'ATS · quadro geral no backup'
+                ? 'ATS · só standby · não carregar o VE'
                 : 'On-grid'
               : 'Anti-apagão desligado'
           }
@@ -222,8 +291,8 @@ export function Results({ input, result }: Props) {
         <h3 className="section-title mb-1">{dayChartTitle(input.goal.mode, input.goal.useClimate)}</h3>
         <p className="hint mb-4">
           {input.goal.useClimate
-            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Intervalo de 30 minutos; barras em kWh por meia hora.'
-            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Intervalo de 30 minutos; barras em kWh por meia hora.'}
+            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Barras de 1 h. Escala à esquerda: consumo, solar e rede (kWh por hora). Escala à direita: estado de carga da bateria (kWh).'
+            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Barras de 1 h. Escala à esquerda: consumo, solar e rede (kWh por hora). Escala à direita: estado de carga da bateria (kWh).'}
         </p>
         <DayProfileChart day={result.day} />
         {dayBest && dayBest.length > 0 && dayWorst && dayWorst.length > 0 && (

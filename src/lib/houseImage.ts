@@ -233,7 +233,7 @@ function drawPanels(
     ctx.beginPath()
     corners.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
     ctx.closePath()
-    ctx.fillStyle = 'rgba(15, 39, 68, 0.08)'
+    ctx.fillStyle = 'rgba(150, 78, 48, 0.32)'
     ctx.fill()
     ctx.lineWidth = 2.5
     ctx.strokeStyle = '#f4f1ea'
@@ -247,14 +247,15 @@ function drawPanels(
     panelsLeft -= n
     const cols = Math.max(1, Math.round(Math.sqrt(Math.max(1, n))))
     const rows = Math.max(1, Math.ceil(Math.max(1, n) / cols))
+    const compress = Math.cos((Math.max(0, Math.min(80, location.roofTiltDeg)) * Math.PI) / 180)
     let drawn = 0
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (drawn >= n) break
-        const u0 = (c + 0.1) / cols
-        const u1 = (c + 0.9) / cols
-        const v0 = (r + 0.1) / rows
-        const v1 = (r + 0.9) / rows
+        const u0 = (c + 0.08) / cols
+        const u1 = (c + 0.92) / cols
+        const v0 = (r + 0.08) / rows
+        const v1 = v0 + (0.84 / rows) * compress
         const quad = [
           uv(corners, u0, v0),
           uv(corners, u1, v0),
@@ -264,11 +265,22 @@ function drawPanels(
         ctx.beginPath()
         quad.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
         ctx.closePath()
-        ctx.fillStyle = drawn % 2 === 0 ? 'rgba(12, 32, 54, 0.78)' : 'rgba(22, 52, 84, 0.78)'
+        ctx.fillStyle = drawn % 2 === 0 ? 'rgba(12, 32, 54, 0.82)' : 'rgba(22, 52, 84, 0.82)'
         ctx.fill()
-        ctx.strokeStyle = 'rgba(186, 220, 245, 0.85)'
+        ctx.strokeStyle = 'rgba(186, 220, 245, 0.9)'
         ctx.lineWidth = 0.8
         ctx.stroke()
+        const lip = [
+          uv(corners, u0, v1),
+          uv(corners, u1, v1),
+          uv(corners, u1, Math.min(1, v1 + (0.04 / rows) * (1 - compress + 0.15))),
+          uv(corners, u0, Math.min(1, v1 + (0.04 / rows) * (1 - compress + 0.15))),
+        ]
+        ctx.beginPath()
+        lip.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)))
+        ctx.closePath()
+        ctx.fillStyle = 'rgba(8, 20, 36, 0.55)'
+        ctx.fill()
         drawn += 1
       }
     }
@@ -312,7 +324,7 @@ export async function renderHouseViews(
     [
       'Implantação dos módulos no telhado',
       rec,
-      `${location.zones.length} zona${location.zones.length === 1 ? '' : 's'} · os painéis seguem as águas desenhadas`,
+      `${location.zones.length} zona${location.zones.length === 1 ? '' : 's'} · inclinação ${location.roofTiltDeg}° · os painéis seguem as águas desenhadas`,
     ],
     (ctx) => {
       drawPanels(ctx, location, result, bbox)

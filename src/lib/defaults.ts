@@ -59,7 +59,29 @@ export function normalizeGoal(saved?: Record<string, unknown>): GoalInput {
     antiBlackout:
       typeof saved?.antiBlackout === 'boolean' ? saved.antiBlackout : wasBackupOnly,
     useClimate: typeof saved?.useClimate === 'boolean' ? saved.useClimate : true,
+    backupHours: clampBackupHours(
+      typeof saved?.backupHours === 'number' ? saved.backupHours : base.backupHours,
+    ),
   }
+}
+
+export const MAX_BACKUP_HOURS = 168
+
+export function clampBackupHours(hours: number): number {
+  if (!Number.isFinite(hours)) return 8
+  return Math.min(MAX_BACKUP_HOURS, Math.max(1, Math.round(hours)))
+}
+
+export function formatBackupDuration(hours: number): string {
+  const h = Math.max(0, hours)
+  const n = (value: number) => {
+    const rounded = Math.abs(value - Math.round(value)) < 0.05 ? Math.round(value) : Math.round(value * 10) / 10
+    return String(rounded).replace('.', ',')
+  }
+  if (h < 24 - 1e-6) return `${n(h)} h`
+  const days = h / 24
+  const dayLabel = Math.abs(days - 1) < 1e-6 ? '1 dia' : `${n(days)} dias`
+  return `${dayLabel} (${n(h)} h)`
 }
 
 export function normalizeInverterLimit(value: unknown): number | null {

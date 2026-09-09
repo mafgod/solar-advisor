@@ -409,6 +409,53 @@ select:focus:not(:focus-visible) {
   color: #3d4a5c;
 }
 
+.label-text {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.info-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.info-mark {
+  border: 0;
+  background: none;
+  padding: 0 3px;
+  margin: 0;
+  color: #9a7b4a;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.info-pop {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 40;
+  width: 240px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f2744;
+  color: #f4f1ea;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  box-shadow: 0 10px 28px -12px #152033aa;
+}
+
+.info-wrap:hover .info-pop,
+.info-wrap:focus-within .info-pop {
+  display: block;
+}
+
 .meta,
 .hint {
   color: #7a8494;
@@ -416,9 +463,64 @@ select:focus:not(:focus-visible) {
   font-weight: 500;
 }
 
-.hint {
+.tilt-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tilt-row input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.tilt-sketch {
+  flex: 0 0 auto;
+  border: 1px solid #e2e7ee;
+  border-radius: 8px;
+  background: #f7f9fb;
+}
+
+.chart-tip {
+  background: #fff;
+  border: 1px solid #e2e7ee;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 39, 68, 0.12);
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #0f2744;
+}
+
+.chart-tip strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+.chart-tip ul {
   margin: 0;
-  line-height: 1.5;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-tip li {
+  margin: 2px 0;
+  font-weight: 600;
+}
+
+.chart-axis-units {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5c6778;
+}
+
+.chart-axis-units span:last-child {
+  color: #1a6b6b;
 }
 
 .notice {
@@ -527,7 +629,10 @@ select:focus:not(:focus-visible) {
 .map-shell.is-draw .leaflet-pane,
 .map-shell.is-rotate,
 .map-shell.is-rotate .leaflet-container,
-.map-shell.is-rotate .leaflet-pane {
+.map-shell.is-rotate .leaflet-pane,
+.map-shell.is-resize,
+.map-shell.is-resize .leaflet-container,
+.map-shell.is-resize .leaflet-pane {
   touch-action: none !important;
   -webkit-user-select: none;
   user-select: none;
@@ -535,6 +640,10 @@ select:focus:not(:focus-visible) {
 
 .map-shell.is-draw .leaflet-container {
   cursor: crosshair;
+}
+
+.map-shell.is-resize .leaflet-container {
+  cursor: nwse-resize;
 }
 
 .map-shell.is-rotate .leaflet-container,
@@ -553,6 +662,16 @@ select:focus:not(:focus-visible) {
   cursor: grab;
 }
 
+.leaflet-div-icon.resize-handle {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: #fff;
+  border: 2px solid #0f2744;
+  box-shadow: 0 2px 8px #0005;
+  cursor: nwse-resize;
+}
+
 .map-tools {
   position: absolute;
   top: 12px;
@@ -562,7 +681,7 @@ select:focus:not(:focus-visible) {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-  max-width: 280px;
+  max-width: 340px;
   pointer-events: auto;
 }
 
@@ -710,6 +829,12 @@ select:focus:not(:focus-visible) {
 
 .chip:hover {
   border-color: #1a4a73;
+  color: #0f2744;
+}
+
+.chip.on {
+  border-color: #1a4a73;
+  background: #e8f0f7;
   color: #0f2744;
 }
 
