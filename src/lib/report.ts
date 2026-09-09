@@ -1,5 +1,5 @@
 import { formatBackupDuration, goalLabel } from './defaults'
-import { dayToHours, formatDayClock, MONTH_NAMES } from './solar'
+import { dayToChartPoints, formatDayClock, MONTH_NAMES } from './solar'
 import { downloadBlob } from './storage'
 import type { StudyInput, StudyResult } from '../types'
 
@@ -35,7 +35,7 @@ function fmtChartTick(value: number): string {
 }
 
 function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh: number }[]): string {
-  const day = dayToHours(dayIn)
+  const day = dayToChartPoints(dayIn)
   const w = 760
   const h = 232
   const pad = { l: 56, r: 56, t: 16, b: 28 }
@@ -82,7 +82,7 @@ function chartSvg(dayIn: { hour: number; loadKwh: number; pvKwh: number; socKwh:
     })
     .join('')
   const axisTitles = [
-    `<text transform="translate(12 ${pad.t + innerH / 2}) rotate(-90)" text-anchor="middle" fill="#5c6778" font-size="9">kWh / h</text>`,
+    `<text transform="translate(12 ${pad.t + innerH / 2}) rotate(-90)" text-anchor="middle" fill="#5c6778" font-size="9">kWh / 30 min</text>`,
     `<text transform="translate(${w - 12} ${pad.t + innerH / 2}) rotate(90)" text-anchor="middle" fill="#1a6b6b" font-size="9">Bateria (kWh)</text>`,
   ].join('')
   return `<svg viewBox="0 0 ${w} ${h}" width="100%" xmlns="http://www.w3.org/2000/svg">${grid}${load}${solar}<path d="${bat}" fill="none" stroke="#1a6b6b" stroke-width="1.8"/>${labels}${axisTitles}</svg>`
@@ -224,8 +224,8 @@ export function buildReportHtml(
     ${chartSvg(result.day)}
     <p class="muted">${
       input.goal.useClimate
-        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Intervalo de 1 h. Escala à esquerda: kWh por hora. Escala à direita: kWh na bateria.'
-        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Intervalo de 1 h. Escala à esquerda: kWh por hora. Escala à direita: kWh na bateria.'
+        ? 'Barras cinzentas: consumo. Barras douradas: solar com o tempo habitual (não céu limpo). Linha verde: estado de carga da bateria. Intervalo de 30 min. Escala à esquerda: kWh por intervalo. Escala à direita: kWh na bateria.'
+        : 'Barras cinzentas: consumo. Barras douradas: solar. Linha verde: estado de carga da bateria. Intervalo de 30 min. Escala à esquerda: kWh por intervalo. Escala à direita: kWh na bateria.'
     }</p>
     ${
       result.dayBest?.length && result.dayWorst?.length

@@ -14,7 +14,7 @@ import { formatBackupDuration, goalLabel } from '../lib/defaults'
 import { renderHouseViews } from '../lib/houseImage'
 import { buildReportHtml, openProfessionalReport } from '../lib/report'
 import { downloadStudyFile } from '../lib/storage'
-import { dayToHours, formatDayClock, MONTH_NAMES } from '../lib/solar'
+import { dayToChartPoints, formatDayClock, MONTH_NAMES } from '../lib/solar'
 import type { ClimateSummary, DaySim, GoalMode, StudyInput, StudyResult } from '../types'
 
 interface Props {
@@ -43,7 +43,7 @@ function monthName(month: number | undefined): string {
 }
 
 function chartRows(day: DaySim[]) {
-  return dayToHours(day).map((d) => ({
+  return dayToChartPoints(day).map((d) => ({
     h: formatDayClock(d.hour),
     Consumo: Number(d.loadKwh.toFixed(3)),
     Solar: Number(d.pvKwh.toFixed(3)),
@@ -100,10 +100,11 @@ function ChartTooltip({
       <ul>
         {payload.map((p) => {
           const name = p.name ?? ''
-          const bat = name === 'Bateria'
+          const unit = name === 'Bateria' ? 'kWh' : 'kWh/30 min'
+          const digits = name === 'Bateria' ? 2 : 3
           return (
             <li key={name} style={{ color: p.color }}>
-              {name}: {fmtPt(Number(p.value), bat ? 2 : 3)} {bat ? 'kWh' : 'kWh/h'}
+              {name}: {fmtPt(Number(p.value), digits)} {unit}
             </li>
           )
         })}
@@ -116,15 +117,15 @@ function DayProfileChart({ day }: { day: DaySim[] }) {
   return (
     <div>
       <div className="chart-axis-units" aria-hidden="true">
-        <span>kWh / h</span>
+        <span>kWh / 30 min</span>
         <span>Bateria (kWh)</span>
       </div>
       <div className="h-96">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartRows(day)}
-            barCategoryGap="18%"
-            barGap={1}
+            barCategoryGap="12%"
+            barGap={0}
             margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
           >
             <CartesianGrid yAxisId="flow" strokeDasharray="3 3" stroke="#e2e7ee" />
@@ -153,7 +154,7 @@ function DayProfileChart({ day }: { day: DaySim[] }) {
             <Legend />
             <Bar yAxisId="flow" dataKey="Consumo" fill="#5c6778" radius={[3, 3, 0, 0]} />
             <Bar yAxisId="flow" dataKey="Solar" fill="#c4a574" radius={[3, 3, 0, 0]} />
-            <Line yAxisId="flow" type="monotone" dataKey="Rede" stroke="#9b1c1c" strokeWidth={1.5} dot={false} />
+            <Line yAxisId="flow" type="stepAfter" dataKey="Rede" stroke="#9b1c1c" strokeWidth={1.5} dot={false} />
             <Line yAxisId="soc" type="monotone" dataKey="Bateria" stroke="#1a6b6b" strokeWidth={2} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
@@ -291,8 +292,8 @@ export function Results({ input, result }: Props) {
         <h3 className="section-title mb-1">{dayChartTitle(input.goal.mode, input.goal.useClimate)}</h3>
         <p className="hint mb-4">
           {input.goal.useClimate
-            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Barras de 1 h. Escala à esquerda: consumo, solar e rede (kWh por hora). Escala à direita: estado de carga da bateria (kWh).'
-            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Barras de 1 h. Escala à esquerda: consumo, solar e rede (kWh por hora). Escala à direita: estado de carga da bateria (kWh).'}
+            ? 'Perfil de produção na hora local da habitação, com o tempo habitual do local (não um dia de céu limpo). Todas as séries a 30 min. Escala à esquerda: consumo, solar e rede (kWh por intervalo). Escala à direita: estado de carga da bateria (kWh).'
+            : 'Perfil de um dia médio do modo escolhido, na hora local da habitação, com a produção mensal do PVGIS. Todas as séries a 30 min. Escala à esquerda: consumo, solar e rede (kWh por intervalo). Escala à direita: estado de carga da bateria (kWh).'}
         </p>
         <DayProfileChart day={result.day} />
         {dayBest && dayBest.length > 0 && dayWorst && dayWorst.length > 0 && (
